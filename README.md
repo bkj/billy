@@ -8,12 +8,11 @@ This code (approximately) reproduces the results of
 
 Need to download the `CUB_200_2011` dataset and rename `./data/cub`
 
-### Prereqs
+### Dependencies
 
-- tdesc -- https://github.com/bkj/tdesc
-- keras
-- sklearn
-- bcolz
+There are a number of python dependencies -- need to get around to adding a `requirements.txt`.  In the meantime, the only unusual dependency is:
+    
+* tdesc -- https://github.com/bkj/tdesc
 
 ### Usage
 
