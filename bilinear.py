@@ -11,6 +11,7 @@
 import bcolz
 import argparse
 import numpy as np
+from tqdm import tqdm
 
 import torch
 from torch.nn import functional as F
@@ -42,14 +43,13 @@ if __name__ == "__main__":
     args = parse_args()
     
     conv = bcolz.open(args.inpath)
-    conv = conv.reshape((conv.shape[0], SIZE * SIZE, DIM))
+    # conv = conv.reshape((conv.shape[0], SIZE * SIZE, DIM))
     
     bili = bcolz.carray(np.empty((0, DIM * DIM), 'float32'), 
         chunklen=16, mode='w', rootdir=args.outpath)
-    
+
     inds = np.array_split(range(len(conv)), args.n_chunks)
-    for i, ind in enumerate(inds):
-        print i * inds[0].shape[0]
+    for ind in tqdm(inds):
         for c in torch.FloatTensor(conv[ind]).cuda():
             bili.append(compute_bilinear_torch(c))
         

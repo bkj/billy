@@ -22,9 +22,9 @@ if K._BACKEND == 'tensorflow':
 # --
 # Load metadata
 
-image_ids = pd.read_csv('./images.txt', sep=' ', header=None).set_index(1) - 1
-tmp = pd.read_csv('./bipaths', header=None)[0]
-tmp = tmp.apply(lambda x: '/'.join(x.split('/')[2:]))
+image_ids = pd.read_csv('./data/cub/images.txt', sep=' ', header=None).set_index(1) - 1
+tmp = pd.read_csv('./convpaths', header=None)[0]
+tmp = tmp.apply(lambda x: '/'.join(x.split('/')[-2:]))
 lookup = pd.DataFrame(np.arange(tmp.shape[0]), index=tmp)
 
 ord_ = np.array(lookup.loc[image_ids.index]).squeeze()
@@ -35,12 +35,11 @@ n_classes = np.unique(labs).shape[0]
 # --
 # Train/test split
 
-train_test_split = pd.read_csv('./train_test_split.txt', sep=' ', header=None)
+train_test_split = pd.read_csv('./data/cub/train_test_split.txt', sep=' ', header=None)
 train_sel = np.array(train_test_split[1].astype('bool'))
 
-conv = bcolz.open('./.bc')[:] # last convolutional features
-bili = bcolz.open('./.bc2')[:] # bilinear pooled conv
-# ^^ Should rerun these from scratch, to guarantee order is the same
+conv = bcolz.open('./conv.bc')[:]
+bili = bcolz.open('./bilinear.bc')[:]
 
 train_conv, test_conv = conv[ord_[train_sel]], conv[ord_[~train_sel]]
 train_bili, test_bili = bili[ord_[train_sel]], bili[ord_[~train_sel]]
@@ -52,20 +51,19 @@ y_test = np.array(pd.get_dummies(test_labs)).argmax(1)
 del conv
 del bili
 
-np.save("train_conv", train_conv)
-np.save("test_conv", test_conv)
-np.save("train_bili", train_bili)
-np.save("test_bili", test_bili)
-np.save("y_train", y_train)
-np.save("y_test", y_test)
+np.save("./data/tmp/train_conv", train_conv)
+np.save("./data/tmp/test_conv", test_conv)
+np.save("./data/tmp/train_bili", train_bili)
+np.save("./data/tmp/test_bili", test_bili)
+np.save("./data/tmp/y_train", y_train)
+np.save("./data/tmp/y_test", y_test)
 
-train_conv = np.load('./train_conv.npy')
-test_conv = np.load('./test_conv.npy')
-train_bili = np.load('./train_bili.npy')
-test_bili = np.load('./test_bili.npy')
-y_train = np.load("./y_train.npy")
-y_test = np.load("./y_test.npy")
-
+train_conv = np.load('./data/tmp/train_conv.npy')
+test_conv = np.load('./data/tmp/test_conv.npy')
+train_bili = np.load('./data/tmp/train_bili.npy')
+test_bili = np.load('./data/tmp/test_bili.npy')
+y_train = np.load('./data/tmp/y_train.npy')
+y_test = np.load('./data/tmp/y_test.npy')
 
 # --
 # Model 1: Train on pooled conv features
@@ -174,42 +172,41 @@ conv_fitist = model.fit(
 # --
 # Model 4: Learning the bilinear pooling (w/ one branch)
 
-# def bili_pooling(x):
-#     shp = K.shape(x)
-#     bsz, w, h, c = shp[0], shp[1], shp[2], shp[3]
-    
-#     # Bilinear pooling
-#     b1 = K.reshape(x, (bsz * w * h, c, 1))
-#     b2 = K.reshape(x, (bsz * w * h, 1, c))
-#     d  = K.reshape(K.batch_dot(b1, b2), (bsz, w * h, c * c))
-#     d = K.sum(d, 1)
-    
-#     # Normalize
-#     d = K.sqrt(K.relu(d))
-#     d = K.l2_normalize(d, -1)
-#     return d
-
-def batch_dot(x, y):
-    return K.T.batched_tensordot(x, y, axes=[2, 1])
-
-
-b = 16
-def block_bili_pooling(x, b=b):
+def bili_pooling(x):
     shp = K.shape(x)
     bsz, w, h, c = shp[0], shp[1], shp[2], shp[3]
     
-    # (Blocked) Bilinear pooling
-    b1 = K.reshape(x, (bsz * w * h * b, c / b, 1))
-    b2 = K.reshape(x, (bsz * w * h * b, 1, c / b))
-    bd = batch_dot(b1, b2)
-    
-    # Aggregate
-    d = K.sum(K.reshape(bd, (bsz, w * h, c ** 2 / b)), 1)
+    # Bilinear pooling
+    b1 = K.reshape(x, (bsz * w * h, c, 1))
+    b2 = K.reshape(x, (bsz * w * h, 1, c))
+    d  = K.reshape(K.batch_dot(b1, b2), (bsz, w * h, c * c))
+    d = K.sum(d, 1)
     
     # Normalize
-    d = K.l2_normalize(K.epsilon() + K.sign(d) * K.sqrt(K.abs(d)), -1)
-    
+    d = K.sqrt(K.relu(d))
+    d = K.l2_normalize(d, -1)
     return d
+
+# def batch_dot(x, y):
+#     return K.T.batched_tensordot(x, y, axes=[2, 1])
+
+# b = 16
+# def block_bili_pooling(x, b=b):
+#     shp = K.shape(x)
+#     bsz, w, h, c = shp[0], shp[1], shp[2], shp[3]
+    
+#     # (Blocked) Bilinear pooling
+#     b1 = K.reshape(x, (bsz * w * h * b, c / b, 1))
+#     b2 = K.reshape(x, (bsz * w * h * b, 1, c / b))
+#     bd = batch_dot(b1, b2)
+    
+#     # Aggregate
+#     d = K.sum(K.reshape(bd, (bsz, w * h, c ** 2 / b)), 1)
+    
+#     # Normalize
+#     d = K.l2_normalize(K.epsilon() + K.sign(d) * K.sqrt(K.abs(d)), -1)
+    
+#     return d
 
 
 n_classes = 200
@@ -220,7 +217,7 @@ N = 512
 
 model = Sequential()
 model.add(Conv2D(512, (1, 1), data_format="channels_last", input_shape=X_train.shape[1:]))
-model.add(Lambda(block_bili_pooling, output_shape=(N ** 2 / b,)))
+model.add(Lambda(bili_pooling, output_shape=(N ** 2 / b,)))
 model.add(Dense(n_classes))
 model.add(Dropout(0.9))
 model.add(Dense(n_classes, activation='softmax'))
