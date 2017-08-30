@@ -69,14 +69,16 @@ train_bili, test_bili = bili[np.array(meta.train)], bili[np.array(~meta.train)]
 # Problem is that PCA on this matrix seems to be very expensive (~232K columns)
 # so we were just computing on subset of rows
 
-pca = PCA(n_components=512).fit(train_bili[:1000])
+rsel = np.random.choice(train_bili.shape[0], 1000, replace=False) 
+pca = PCA(n_components=512).fit(train_bili[rsel]) # untested
+
 npca_train_bili = normalize(pca.transform(train_bili))
 npca_test_bili = normalize(pca.transform(test_bili))
 
 svc = LinearSVC().fit(npca_train_bili, train_labs)
 (svc.predict(npca_test_bili) == test_labs).mean()
 
-# 0.746 (normalized, unwhiten)
+# 0.757 (normalized, unwhiten)
 # ^^ Basically as good as using full bilinear features
 
 # --
