@@ -37,7 +37,7 @@ class ConvWorker(VGG16Worker):
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--outpath', type=str, default='./conv.bc')
-    parser.add_argument('--target-dim', type=int, default=448)
+    parser.add_argument('--target-dim', type=int, default=224)
     return parser.parse_args()
 
 SIZE = 28
