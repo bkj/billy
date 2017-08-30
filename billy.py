@@ -14,7 +14,8 @@ import bcolz
 import numpy as np
 import pandas as pd
 
-from sklearn.svm import LinearSVC, SVC
+from sklearn.decomposition import PCA
+from sklearn.svm import LinearSVC
 from sklearn.preprocessing import normalize
 
 import keras
@@ -36,48 +37,47 @@ if K._BACKEND == 'tensorflow':
 
 meta = pd.read_csv('./data/cub/meta.tsv', header=None, sep='\t')
 meta.columns = ('id', 'fname', 'train')
+meta['lab'] = meta.fname.apply(lambda x: x.split('/')[0])
+
+train_sel = np.array(meta.train)
+train_labs, test_labs = np.array(meta.lab[meta.train]), np.array(meta.lab[~meta.train])
 
 # --
 # Linear classifier
 
 # Metadata IO
-df = pd.read_csv('./data/feats-crow-448', sep='\t', header=None)
-df[0] = df[0].apply(lambda x: '/'.join(x.split('/')[2:]))
+crow = pd.read_csv('./data/feats-crow-448', sep='\t', header=None)
+crow = np.array(crow[crow.columns[1:]])
+ncrow = normalize(crow)
 
-lookup = pd.DataFrame(np.arange(df.shape[0]), index=df[0])
-df = df.loc[np.array(lookup.loc[image_ids.index]).squeeze()]
-
-labs = np.array(df[0].apply(lambda x: x.split('/')[0]))
-feats = np.array(df[range(1, df.shape[1])])
-nfeats = normalize(feats)
-
-train_labs, test_labs = labs[train_sel], labs[~train_sel]
-train_feats, test_feats = nfeats[train_sel], nfeats[~train_sel]
+train_ncrow, test_ncrow = ncrow[train_sel], ncrow[~train_sel]
 
 # Train classifier
-svc = LinearSVC().fit(train_feats, train_labs)
-(svc.predict(test_feats) == test_labs).mean() # 0.660
+svc = LinearSVC().fit(train_ncrow, train_labs)
+(svc.predict(test_ncrow) == test_labs).mean() # 0.660
 
 # --
 # Load bilinear features
 
-# Metadata IO
-df = pd.read_csv('./data/convpaths', header=None)
-df[0] = df[0].apply(lambda x: '/'.join(x.split('/')[-2:]))
-lookup = pd.DataFrame(np.arange(df.shape[0]), index=df[0])
-ord_ = np.array(lookup.loc[image_ids.index]).squeeze()
-
-labs = np.array(df[0].apply(lambda x: x.split('/')[0]))[ord_]
-n_classes = np.unique(labs).shape[0]
-train_labs, test_labs = labs[train_sel], labs[~train_sel]
-
-y_train = np.array(pd.get_dummies(train_labs)).argmax(1)
-y_test = np.array(pd.get_dummies(test_labs)).argmax(1)
-
 # Data IO
 bili = bcolz.open('./data/bilinear.bc')[:]
-train_bili = bili[ord_[train_sel]]
-test_bili = bili[ord_[~train_sel]]
+
+train_bili, test_bili = bili[np.array(meta.train)], bili[np.array(~meta.train)]
+
+# --
+# Use PCA to reduce dimensionality, then train SVM
+# Problem is that PCA on this matrix seems to be very expensive (~232K columns)
+# so we were just computing on subset of rows
+
+pca = PCA(n_components=512).fit(train_bili[:1000])
+npca_train_bili = normalize(pca.transform(train_bili))
+npca_test_bili = normalize(pca.transform(test_bili))
+
+svc = LinearSVC().fit(npca_train_bili, train_labs)
+(svc.predict(npca_test_bili) == test_labs).mean()
+
+# 0.746 (normalized, unwhiten)
+# ^^ Basically as good as using full bilinear features
 
 # --
 # Train model w/ bilinear features
@@ -105,20 +105,5 @@ fitist = model.fit(
 # dropout 0.50 = ~0.75 @ e11 (got impatient)
 # dropout 0.75 = 0.7684
 
-# --
-# Use PCA to reduce dimensionality, then train SVM
-# Problem is that PCA on this matrix seems to be very expensive (~232K columns)
-# so we were just computing on subset of rows
-
-from sklearn.decomposition import PCA
-
-pca = PCA(n_components=512, svd_solver='randomized').fit(train_bili[:1000])
-npca_train_bili = normalize(pca.transform(train_bili))
-npca_test_bili = normalize(pca.transform(test_bili))
-
-svc = LinearSVC().fit(pca_train_bili, train_labs)
-(svc.predict(pca_test_bili) == test_labs).mean()
-# 0.746 (normalized, unwhiten)
-# ^^ Basically as good as using full bilinear features
 
 
