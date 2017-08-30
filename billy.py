@@ -4,6 +4,8 @@
     billy.py
     
     Compare models using CROW features w/ those using bilinear features
+    
+    !! Need to clean up the ordering
 """
 
 import os
@@ -12,7 +14,7 @@ import bcolz
 import numpy as np
 import pandas as pd
 
-from sklearn.svm import LinearSVC
+from sklearn.svm import LinearSVC, SVC
 from sklearn.preprocessing import normalize
 
 import keras
@@ -30,12 +32,10 @@ if K._BACKEND == 'tensorflow':
     limit_mem()
 
 # --
-# Prep
+# Meta
 
-train_test_split = pd.read_csv('./data/cub/train_test_split.txt', sep=' ', header=None)
-train_sel = np.array(train_test_split[1].astype('bool'))
-
-image_ids = pd.read_csv('./data/cub/images.txt', sep=' ', header=None).set_index(1) - 1
+meta = pd.read_csv('./data/cub/meta.tsv', header=None, sep='\t')
+meta.columns = ('id', 'fname', 'train')
 
 # --
 # Linear classifier
@@ -56,10 +56,7 @@ train_feats, test_feats = nfeats[train_sel], nfeats[~train_sel]
 
 # Train classifier
 svc = LinearSVC().fit(train_feats, train_labs)
-(svc.predict(test_feats) == test_labs).mean()
-
-# fc2 => 0.579
-# crow => 0.660
+(svc.predict(test_feats) == test_labs).mean() # 0.660
 
 # --
 # Load bilinear features
@@ -108,11 +105,11 @@ fitist = model.fit(
 # dropout 0.50 = ~0.75 @ e11 (got impatient)
 # dropout 0.75 = 0.7684
 
-# top 10K features by std
-# dropout 0.50 = ~0.75 @ e38 (got impatient)
-
 # --
 # Use PCA to reduce dimensionality, then train SVM
+# Problem is that PCA on this matrix seems to be very expensive (~232K columns)
+# so we were just computing on subset of rows
+
 from sklearn.decomposition import PCA
 
 pca = PCA(n_components=512, svd_solver='randomized').fit(train_bili[:1000])
@@ -123,3 +120,5 @@ svc = LinearSVC().fit(pca_train_bili, train_labs)
 (svc.predict(pca_test_bili) == test_labs).mean()
 # 0.746 (normalized, unwhiten)
 # ^^ Basically as good as using full bilinear features
+
+

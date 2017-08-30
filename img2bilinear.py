@@ -41,11 +41,8 @@ class ConvWorker(VGG16Worker):
     
     def featurize(self, path, img, return_feat=False):
         feat = self.model.predict(img).squeeze()
-        print feat.shape
         tfeat = feat.reshape(feat.shape[0] * feat.shape[1], feat.shape[2])
-        print tfeat.shape
         tfeat = torch.FloatTensor(tfeat).cuda()
-        print tfeat.size()
         bili = compute_bilinear_torch(tfeat)
         return path, bili
 
@@ -70,6 +67,3 @@ if __name__ == "__main__":
     for p, w in worker:
         conv.append(w)
         conv.flush()
-        
-        print p
-        sys.stdout.flush()
