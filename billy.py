@@ -7,6 +7,7 @@
 """
 
 import os
+import sys
 import bcolz
 import numpy as np
 import pandas as pd
@@ -111,45 +112,14 @@ fitist = model.fit(
 # dropout 0.50 = ~0.75 @ e38 (got impatient)
 
 # --
-# Train model on subset of bilinear features
-
-# Option 1
-# Choose some dimensions w/ the highest standard deviation
-stds = train_bili.std(axis=0)
-k = 16
-sel = np.argsort(-stds)[:512 * k]
-train_sbili, test_sbili = train_bili[:,sel], test_bili[:,sel]
-
-# Option 2 (better)
-# Use PCA to reduce dimensionality
+# Use PCA to reduce dimensionality, then train SVM
 from sklearn.decomposition import PCA
-pca = PCA(n_components=512).fit(train_bili[:1000])
-pca_train_bili = pca.transform(train_bili)
-pca_test_bili = pca.transform(test_bili)
 
-# !! Even w/ LinearSVC -- this works better than normal features
+pca = PCA(n_components=512, svd_solver='randomized').fit(train_bili[:1000])
+npca_train_bili = normalize(pca.transform(train_bili))
+npca_test_bili = normalize(pca.transform(test_bili))
+
 svc = LinearSVC().fit(pca_train_bili, train_labs)
 (svc.predict(pca_test_bili) == test_labs).mean()
-# 0.741
-
-model = Sequential()
-model.add(Dense(n_classes, input_shape=(pca_train_bili.shape[1],)))
-model.add(Dropout(0.5))
-model.add(Dense(n_classes, activation='softmax'))
-model.compile(loss='sparse_categorical_crossentropy', optimizer='adam', metrics=['acc'])
-
-fitist = model.fit(
-    pca_train_bili, y_train, 
-    verbose=True, 
-    batch_size=32,
-    validation_data=(pca_test_bili, y_test),
-    epochs=50,
-    callbacks=[
-        keras.callbacks.EarlyStopping(patience=10),
-        keras.callbacks.ReduceLROnPlateau(patience=5)
-    ]
-)
-
-# k=16, dropout = 0.50 -> 0.751 @ e50
-# pca=0.9, dropout=0.50 -> 0.757 @ e50
-
+# 0.746 (normalized, unwhiten)
+# ^^ Basically as good as using full bilinear features

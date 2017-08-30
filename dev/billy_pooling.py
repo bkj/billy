@@ -91,13 +91,18 @@ train_conv = train_conv.reshape((train_conv.shape[0], 28, 28, 512))
 test_conv = test_conv.reshape((test_conv.shape[0], 28, 28, 512))
 
 
-N = 32
+N = 16
+M = 16
 
+# Scaled down branch
 inp_x = Input(shape=train_conv.shape[1:])
-inp_y = Input(shape=train_conv.shape[1:])
-
 conv_x = Conv2D(N, (1, 1), data_format="channels_last")(inp_x)
-bili = Lambda(bili_pooling_asym, output_shape=(N * train_conv.shape[-1],))([inp_x, inp_y])
+
+# Identity branch
+inp_y = Input(shape=train_conv.shape[1:])
+conv_y = Conv2D(M, (1, 1), data_format="channels_last")(inp_y)
+
+bili = Lambda(bili_pooling_asym, output_shape=(N * M,))([conv_x, conv_y])
 
 x = Dense(512)(bili)
 x = Dropout(0.5)(x)
